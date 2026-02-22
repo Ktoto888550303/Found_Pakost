@@ -6,6 +6,8 @@ import requests
 import arcade
 import arcade.gui
 from PIL import Image
+
+from addres_searcher import AddressSearcher
 from constans import *
 from attrs import define
 
@@ -88,24 +90,54 @@ class MapView(arcade.Window):
         self._background = None
         self._theme_switcher = ThemeSwitcher()
         self._update_map()
+
         self._ui_manager = arcade.gui.UIManager()
         self._ui_manager.enable()
         self._anchor_layout = arcade.gui.UIAnchorLayout()
-        self._box_layout = arcade.gui.UIBoxLayout()
-        start_button = arcade.gui.UIFlatButton(text="Switch Theme", width=200)
-        start_button.on_click = self._switch_theme
-        self._box_layout.add(start_button)
+
+        self._theme_box_layout = arcade.gui.UIBoxLayout()
+        self._theme_switch_button = arcade.gui.UIFlatButton(text="🌚", width=25, height=25)
+        self._theme_switch_button.on_click = self._switch_theme
+        self._theme_box_layout.add(self._theme_switch_button)
         self._anchor_layout.add(
-            child=self._box_layout,
+            child=self._theme_box_layout,
             anchor_x="right",
-            anchor_y="top"
+            anchor_y="top",
+            align_y=-10,
+            align_x=-10
         )
+
+        self._search_address_layout = arcade.gui.UIBoxLayout()
+        self._address_inputer = arcade.gui.UIInputText(
+            width=300,
+            height=40,
+            text='Африка',
+            text_color=arcade.color.ARCADE_YELLOW
+        ).with_border(color=arcade.color.GRAY)
+
+        self._search_address_layout.add(self._address_inputer)
+        self._anchor_layout.add(
+            child=self._search_address_layout,
+            anchor_x="right",
+            anchor_y="bottom",
+            align_y=25,
+            align_x=-10
+        )
+
         self._ui_manager.add(self._anchor_layout)
 
+        self._address_searcher = AddressSearcher(self._read_geocode_api_key())
+
     @staticmethod
-    def _read_api_key() -> str:
+    def _read_static_api_key() -> str:
         with open(API_KEY_FILE, 'r') as file:
             return file.readline().strip()
+
+    @staticmethod
+    def _read_geocode_api_key() -> str:
+        with open(API_KEY_FILE, 'r') as file:
+            _, api = file.readline().strip(), file.readline().strip()
+            return api
 
     def _draw_background(self) -> None:
         x = (self.width - self._background.width) // 2
@@ -125,7 +157,7 @@ class MapView(arcade.Window):
         self._span = self._span.zoom_out()
 
     def _update_map(self) -> None:
-        api_key = self._read_api_key()
+        api_key = self._read_static_api_key()
         api = MapAPI(api_key)
         image_data = api.get_map_image(self._coordinates, self._span, self._theme_switcher.theme)
         image = Image.open(io.BytesIO(image_data))
@@ -135,6 +167,7 @@ class MapView(arcade.Window):
 
     def _switch_theme(self, event: arcade.gui.UIOnClickEvent) -> None:
         self._theme_switcher.switch_theme()
+        self._theme_switch_button.text = '🌚' if self._theme_switcher.theme == 'light' else '🌝'
         self._update_map()
 
     def on_draw(self) -> None:
@@ -159,6 +192,8 @@ class MapView(arcade.Window):
             self._zoom_in()
         elif key == arcade.key.Q:
             self._zoom_out()
+        elif key == arcade.key.ENTER:
+            self._coordinates = Coordinates(*self._address_searcher.search_address(self._address_inputer.text))
         else:
             need_update = False
 
