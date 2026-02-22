@@ -64,17 +64,28 @@ class ThemeSwitcher:
     def switch_theme(self) -> None:
         self._last_theme = self._theme_dark if self._last_theme == 'light' else self._theme_light
 
+@define
+class Point:
+    _coordinates: Coordinates
+
+    @property
+    def coordinates(self) -> Coordinates:
+        return self._coordinates
+
+    def set_coordinates(self, coordinates: Coordinates) -> None:
+        self._coordinates = coordinates
 
 @dataclass
 class MapAPI:
     api_key: str
 
-    def get_map_image(self, coordinates: Coordinates, span: Span, theme: str) -> bytes:
+    def get_map_image_with_point(self, coordinates: Coordinates, span: Span, theme: str, point: str) -> bytes:
         params = {
             "ll": coordinates.as_string,
             "spn": span.as_string,
             "apikey": self.api_key,
-            "theme": theme
+            "theme": theme,
+            "pt": point + ',round'
         }
 
         response = requests.get(ADDRESS, params=params)
@@ -89,6 +100,7 @@ class MapView(arcade.Window):
         self._span = base_span
         self._background = None
         self._theme_switcher = ThemeSwitcher()
+        self._point = Point(Coordinates(0, 0))
         self._update_map()
 
         self._ui_manager = arcade.gui.UIManager()
@@ -159,7 +171,8 @@ class MapView(arcade.Window):
     def _update_map(self) -> None:
         api_key = self._read_static_api_key()
         api = MapAPI(api_key)
-        image_data = api.get_map_image(self._coordinates, self._span, self._theme_switcher.theme)
+        image_data = api.get_map_image_with_point(self._coordinates, self._span, self._theme_switcher.theme,
+                                                  self._point.coordinates.as_string)
         image = Image.open(io.BytesIO(image_data))
         resized_image = image.resize((self.width, self.height), Image.Resampling.LANCZOS)
         resized_image.save(MAP_FILE)
@@ -193,12 +206,16 @@ class MapView(arcade.Window):
         elif key == arcade.key.Q:
             self._zoom_out()
         elif key == arcade.key.ENTER:
-            self._coordinates = Coordinates(*self._address_searcher.search_address(self._address_inputer.text))
+            point = Coordinates(
+                *map(float, self._address_searcher.search_address(self._address_inputer.text)))
+            self._point.set_coordinates(point)
+            self._coordinates = point
         else:
             need_update = False
 
         if need_update:
             self._update_map()
+
 
 
 def parse_arguments():
