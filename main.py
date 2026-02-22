@@ -4,8 +4,10 @@ from dataclasses import dataclass
 import io
 import requests
 import arcade
+import arcade.gui
 from PIL import Image
 from constans import *
+from attrs import define
 
 
 @dataclass(frozen=True)
@@ -47,15 +49,30 @@ class Span:
         return Span(min(MAX_SPN, self._x * ZOOM), min(MAX_SPN, self._y * ZOOM))
 
 
+@define
+class ThemeSwitcher:
+    _theme_light: str = 'light'
+    _theme_dark: str = 'dark'
+    _last_theme: str = 'light'
+
+    @property
+    def theme(self) -> str:
+        return self._last_theme
+
+    def switch_theme(self) -> None:
+        self._last_theme = self._theme_dark if self._last_theme == 'light' else self._theme_light
+
+
 @dataclass
 class MapAPI:
     api_key: str
 
-    def get_map_image(self, coordinates: Coordinates, span: Span) -> bytes:
+    def get_map_image(self, coordinates: Coordinates, span: Span, theme: str) -> bytes:
         params = {
             "ll": coordinates.as_string,
             "spn": span.as_string,
-            "apikey": self.api_key
+            "apikey": self.api_key,
+            "theme": theme
         }
 
         response = requests.get(ADDRESS, params=params)
@@ -69,7 +86,21 @@ class MapView(arcade.Window):
         self._coordinates = base_coordinates
         self._span = base_span
         self._background = None
+        self._theme_switcher = ThemeSwitcher()
         self._update_map()
+        self._ui_manager = arcade.gui.UIManager()
+        self._ui_manager.enable()
+        self._anchor_layout = arcade.gui.UIAnchorLayout()
+        self._box_layout = arcade.gui.UIBoxLayout()
+        start_button = arcade.gui.UIFlatButton(text="Switch Theme", width=200)
+        start_button.on_click = self._switch_theme
+        self._box_layout.add(start_button)
+        self._anchor_layout.add(
+            child=self._box_layout,
+            anchor_x="right",
+            anchor_y="top"
+        )
+        self._ui_manager.add(self._anchor_layout)
 
     @staticmethod
     def _read_api_key() -> str:
@@ -96,16 +127,20 @@ class MapView(arcade.Window):
     def _update_map(self) -> None:
         api_key = self._read_api_key()
         api = MapAPI(api_key)
-        image_data = api.get_map_image(self._coordinates, self._span)
+        image_data = api.get_map_image(self._coordinates, self._span, self._theme_switcher.theme)
         image = Image.open(io.BytesIO(image_data))
         resized_image = image.resize((self.width, self.height), Image.Resampling.LANCZOS)
         resized_image.save(MAP_FILE)
         self._background = arcade.load_texture(MAP_FILE)
 
+    def _switch_theme(self, event: arcade.gui.UIOnClickEvent) -> None:
+        self._theme_switcher.switch_theme()
+        self._update_map()
 
     def on_draw(self) -> None:
         self.clear()
         self._draw_background()
+        self._ui_manager.draw()
 
     def on_key_press(self, key: int, modifiers: int) -> None:
         move_step_x = self._span.get_x * MOVE_STEP_RATIO
